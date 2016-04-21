@@ -6,6 +6,7 @@ import theano
 import theano.tensor as TT
 import theano.tensor.nnet
 import random
+from PIL import Image
 import math
 from random import shuffle
 
@@ -26,9 +27,23 @@ class RawIterator():
 			self.select_step = 2
 			self.input_frame_num = 5
 			self.output_frame_num = 15
+			self.mode = "train"
+			self.imageW = 330
+			self.imageH = self.imageW
+			self.batchSize = 4
+			self.inputSize = 100
+			self.data_txt = self.total_list_file.split(".txt")[0] + "_"+ self.mode +".txt"
+			# self.slot_devide(self.total_list_file, self.total_image, self.slot_size):
+			self.txt_entries = []
+			
+			self.numOfSlot = int(math.floor(self.total_image / self.slot_size))
+			self.stride = self.select_step * (self.input_frame_num + self.output_frame_num)
 			self.entries_generate()
-        	# self.load(self.path)
+	        	self.data_generator = self.dataRead()
 
+        	# self.load(self.path)
+        	# self.dataBatch = self.dataRead()
+        	
 
 	def entries_generate(self):
 		""" 
@@ -42,12 +57,11 @@ class RawIterator():
 			entries with stride 60: [1,2,3,...., 420, 640, 0641, ...]
 		"""
 		mode = 'train'
-		self.txt_entries = []
-		self.stride = self.select_step * (self.input_frame_num + self.output_frame_num)
+		# self.txt_entries = []
 		
 		for numOfSlot in range(int(math.floor(self.total_image / self.slot_size))): # number of slot: 135
 			subslot_size = self.slot_size / 8
-			print(numOfSlot	)
+			# print(numOfSlot)
 			if(mode == 'train'):
 				subslot_size = subslot_size * 6 # 480
 				for lineNumber in range(numOfSlot* subslot_size, numOfSlot* subslot_size + subslot_size - self.stride):
@@ -58,6 +72,72 @@ class RawIterator():
 				for lineNumber in range(numOfSlot* subslot_size, numOfSlot* subslot_size + subslot_size - self.stride):
 					self.txt_entries.append(lineNumber)
 		print("entries_generate done")
+
+	def slot_devide(total_list_file, total_image, slot_size):
+		import math
+		of = open(total_list_file, 'r')
+		lines = of.readlines()
+		of.close()
+		print(type(lines))
+		assert len(lines) == total_image
+		train_txt = open(total_list_file.split(".txt")[0] + "_train.txt", 'w')
+		valid_txt = open(total_list_file.split(".txt")[0] + "_valid.txt", 'w')
+		test_txt = open(total_list_file.split(".txt")[0] + "_test.txt", 'w')
+
+		for i in range(int(math.floor(total_image / slot_size))):
+			print(i)
+			start = slot_size * i
+			subslot_size = slot_size / 8
+			for line in lines[start : start + 6 * subslot_size]:
+				train_txt.write(line)
+	 		
+			for line in lines[start + 6 * subslot_size : start + 7 * subslot_size]:
+				test_txt.write(line) 
+			
+			for line in lines[start + 7 * subslot_size : start + 8 * subslot_size]:
+				train_txt.write(line)
+	   		train_txt.close()
+	   		valid_txt.close()
+	   		test_txt.close()
+
+	def dataRead(self):
+		of = open(self.data_txt, 'r')
+			
+		imageList = of.readlines()
+		of.close()
+
+		datapath = './small2015/'
+		total = self.total_image
+		inputSize = self.inputSize, self.inputSize
+		batchSize = self.batchSize
+		i = 0
+
+		# for ind, line in enumerate(imageList):
+		print('reset')
+		result = numpy.zeros((batchSize, self.inputSize, self.inputSize))
+		for numOfSlot in range(self.numOfSlot):	
+			lineNumebr = self.txt_entries[numOfSlot]
+			for i in range(self.batchSize):
+					name = datapath + imageList[lineNumebr].split('\n')[0]
+					print(name)
+					# img = mpimg.imread(name)
+					# img = rgb2gray(img)
+					"""
+					imagePIL = Image.open(name)
+					imagePIL.thumbnail(size)
+					
+					# imagePIL.show()
+					img = numpy.asarray(imagePIL)
+					print(img.shape)
+					result[i] = img
+					"""
+					lineNumebr += 1
+			print('yield result')
+			yield result
+
+	def getBatch(self):
+		
+		return next(self.data_generator)
 
 """
     def slot_devide()
@@ -77,9 +157,6 @@ class RawIterator():
      		test_txt.write(line for line in lines[start + 6 * subslot_size : start + 7 * subslot_size])
     		train_txt.write(line for line in lines[start + 7 * subslot_size : start + 8 * subslot_size])
    		
-   		train_txt.close()
-   		valid_txt.close()
-   		test_txt.close()
 
     def txtGenerator(input_frame_num, output_frame_num, select_step):
 
