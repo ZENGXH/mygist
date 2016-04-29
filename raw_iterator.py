@@ -31,8 +31,7 @@ class RawIterator(DataIterator):
 class RawIterator(object):
 	def __init__(self, iterator_param):
 		
-		# self.name = ''
-		self.datapath = '../../mygist/small2015/'
+		self.path = iterator_param.get('path', '../../SPARNN/data/2015/') ##'../../SPARNN/data/2015/'
 		self.mode = iterator_param.get('mode', 'train')
 		self.name = iterator_param.get('name', 'iterators')
 
@@ -50,12 +49,10 @@ class RawIterator(object):
 		self.imageW = iterator_param.get('input_imageW', 330)	
 		self.imageH = self.imageW
 		self.minibatch_size = iterator_param.get('minibatch_size', 1)
-		self.depth = 1
-		print(self.minibatch_size)
-
-		# self.inputSize = iterator_param.get('inputSize', self.imageW)
+		self.depth = iterator_param.get('depth', 1)
 
 		self.data_txt = self.total_list_file.split(".txt")[0] + "_"+ self.mode +".txt"
+
 		# self.slot_devide(self.total_list_file, self.total_image, self.slot_size):
 		self.txt_entries = []
 		
@@ -63,18 +60,26 @@ class RawIterator(object):
 		self.stride = self.select_step * (self.input_frame_num + self.output_frame_num)
 
 		self.dataSize = 0 # init
-		self.entriesCal()
-		self.input_nSeq = 5
-		#super(RawIterator, self).__init__(iterator_param)
-		# self.dataRead()
-		# self._dataRead()
+		# init slodIDs
+		self.slotIDs = range(self.minibatch_size)
+		if not os.path.isfile(self.data_txt):
+			self.slotDevide()
 
-    	# self.data_generator = 
-    	# self.load(self.path)
-    	# self.dataBatch = self.dataRead()
-        	
+	def begin(self, do_shuffle=True):
+		print('begin')
+		self.entriesCal(do_shuffle)
 
-	def entriesCal(self):
+		print('loading data_txt')
+		of = open(self.data_txt, 'r')
+		self.imageList = of.readlines()
+		assert(not len(self.imageList) == 0)
+		of.close()
+		return
+
+	def total(self):
+		return self.total_image
+
+	def entriesCal(self, do_shuffle=False):
 		""" 
 			based on 
 			self.total_list_file + "_train.txt" 
@@ -91,20 +96,25 @@ class RawIterator(object):
 			subslot_size = self.slot_size / 8
 			# print(numOfSlot)
 			if(self.mode == 'train'):
-				print('shuffle data', self.mode)
 				subslot_size = subslot_size * 6 # 480
 				for lineNumber in range(numOfSlot* subslot_size, numOfSlot * subslot_size + subslot_size - self.stride):
-					self.txt_entries.append(lineNumber)
-				shuffle(self.txt_entries)
+					self.txt_entries.append(lineNumber)		
 			else:
 				subslot_size = subslot_size # 80
 				for lineNumber in range(numOfSlot* subslot_size, numOfSlot * subslot_size + subslot_size - self.stride):
 					self.txt_entries.append(lineNumber)
+			if(do_shuffle):
+				# print('shuffle data')
+				shuffle(self.txt_entries)
 		print("entries_generate done: ")
 		self.dataSize = len(self.txt_entries)
-		print(self.txt_entries[1:10])
+		
 
 	def slotDevide(self):
+		"""
+			only called when the train, valid, test file do not exist
+		"""
+		print("producing " + self.total_list_file.split(".txt")[0] + "_train.txt" + ' and valid and test')
 		import math
 		total_list_file = self.total_list_file
 		of = open(self.total_list_file, 'r')
@@ -133,55 +143,22 @@ class RawIterator(object):
    		test_txt.close()
 
 
-	def dataRead(self):
-		print('loading data_txt')
-		of = open(self.data_txt, 'r')
-			
-		imageList = of.readlines()
-		assert(not len(imageList) == 0)
-		
-		of.close()
-
-		
-		
-		# minibatch_size = self.minibatch_size
-		# i = 0
-
-		# for ind, line in enumerate(imageList):
-		print('reset')
-		result = numpy.zeros((self.input_frame_num, self.minibatch_size, self.depth, self.imageH, self.imageW))
-		
-		slotID = 0
-		print(self.txt_entries[1:10])
+	def dataReadNextInput(self):
+		# print('in')
+		result = numpy.zeros((self.input_frame_num, self.minibatch_size, self.depth, self.imageH, self.imageW), dtype=numpy.float32)
 		while True:
 			# load batchSize
 			for i in range(self.minibatch_size):
-				slotID = slotID % len(self.txt_entries)
+				self.slotID = self.slotIDs[i]
 				# start point:
-				lineNumber = self.txt_entries[slotID] 
-				slotID += 1
-				print('slotID: ' + str(slotID), len(self.txt_entries))
-				print('--- for batch #' + str(i))
-				for len_input in range(self.input_frame_num):
-					print('lineNumber: ' + str(lineNumber) + ' ' + imageList[lineNumber])
-					
-					name = self.datapath + imageList[lineNumber].split('\n')[0]
-					# print(name)
-					# result.append(name)
-					# img = mpimg.imread(name)
-					# img = rgb2gray(img)
-					
+				self.lineNumber = self.txt_entries[self.slotID] 
+				for length in range(self.input_frame_num):
+					print('lineNumber: ' + str(self.lineNumber) + ' ' + self.imageList[self.lineNumber])
+					name = self.path + self.imageList[self.lineNumber].split('\n')[0]
 					imagePIL = Image.open(name)
-					imagePIL = imagePIL.thumbnail((self.imageH, self.imageW))
-					# print(imagePIL.type)
 					numpy.asarray(imagePIL, dtype=numpy.float32)
-					 
-					# imagePIL.show()
-					# print(img.shape)
-					# result[i] = img
-
-					result[len_input, i, 0, :, :] = imagePIL
-					lineNumber += 1
+					result[length, i, 0, :, :] = imagePIL
+					self.lineNumber += self.select_step
 
 				"""
 				imagePIL = Image.open(name)
@@ -192,18 +169,63 @@ class RawIterator(object):
 				print(img.shape)
 				result[i] = img
 				"""
-			print('----- \n')
-			returnList = [result]
+			yield result
 
-			# print('yield result')
-			yield returnList
+	def dataReadNextOutput(self):
+		print('out')
+		result = numpy.zeros((self.output_frame_num, self.minibatch_size, self.depth, self.imageH, self.imageW), dtype=numpy.float32)
+		print(self.txt_entries[1:10])
+		while True:
+			# load batchSize
+			for i in range(self.minibatch_size):
+				self.slotID = self.slotIDs[i]
+				# start point:
+				self.lineNumber = self.txt_entries[self.slotID] + self.select_step * self.input_frame_num
+				# print('self.slotID: ' + str(self.slotID), len(self.txt_entries))
+				for length in range(self.output_frame_num):
+					print('lineNumber: ' + str(self.lineNumber) + ' ' + self.imageList[self.lineNumber])
+					name = self.path + self.imageList[self.lineNumber].split('\n')[0]
+					imagePIL = Image.open(name)
+					numpy.asarray(imagePIL, dtype=numpy.float32)
+					# imagePIL.show()
+					# print(img.shape)
+					# result[i] = img
+					result[length, i, 0, :, :] = imagePIL
+					self.lineNumber += self.select_step
 
-	def getNextBatch(self):
-		return # next(self.data_generator)
+				"""
+				imagePIL = Image.open(name)
+				imagePIL.thumbnail(size)
+				
+				# imagePIL.show()
+				img = numpy.asarray(imagePIL)
+				print(img.shape)
+				result[i] = img
+				"""
+			yield result
+	def next(self):
+		"""
+			generate next slot ids for next inputBatch
+		"""
+		for i in range(self.minibatch_size):
+			self.slotIDs[i] = (self.slotIDs[i] + 1)% len(self.txt_entries)
+		return 
+
+	def no_batch_left(self):
+			return False
+
+	def input_batch(self):
+		return [next(self.dataReadNextInput())]
+
+	def output_batch(self):
+		return [next(self.dataReadNextOutput())]
+
+	def check_data(self):
+		return True
 
 	def print_stat(self):
-		p = self.datapath
-		print("   Path: " + str(p))
+		
+		print("   DataPath: " + self.path)
 		print("   Minibatch Size: " + str(self.minibatch_size))
 		print("   length of inpur Sequence: " + str(self.input_frame_num))
 		print("   data txt file: " + self.data_txt)
