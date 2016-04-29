@@ -3,8 +3,12 @@
 
 for year in "2009" "2010" "2011" "2012" "2013" "2014"
 do
+    rm -r ./${year}
     # cp ../../../hko/data/$year*.tar.gz .
+
     tar xzf ${year}.tar.gz
+    
+
     find ./${year} -type f -name 'RAD*.REF2256' -print0 | xargs -0 mv -t ./${year}
     find ./${year} type d -empty -delete
 
