@@ -30,23 +30,23 @@ class RawIterator(DataIterator):
 """
 class RawIterator(object):
 	def __init__(self, iterator_param):
-		
-		self.path = iterator_param.get('path', '../../SPARNN/data/2015/') ##'../../SPARNN/data/2015/'
+		# print(iterator_param)
+		self.path = iterator_param.get('path', '../../SPARNN/data/') ##'../../SPARNN/data/2015/'
 		self.mode = iterator_param.get('mode', 'train')
 		self.name = iterator_param.get('name', 'iterators')
 
-		self.total_list_file = iterator_param.get('total_list_file', "../../mygist/2015imgList.txt")
+		self.total_list_file = iterator_param.get('total_list_file', "totalFileList.txt")
 		of = open(self.total_list_file, 'r')
 		lines = of.readlines()
 		of.close()
 		self.total_image = len(lines)
 
-		self.slot_size = iterator_param.get('slot_size', 640) # train : test : valid = 6:1:1, ie 480 : 80 : 80
-		self.select_step = iterator_param.get('select_step', 2)
+		self.slot_size = iterator_param.get('slot_size', 640) # train : test : valid = 6:1:1, ie slotsize*6/8 : slotsize/8 : slotsize/8
+		self.select_step = iterator_param.get('select_step', 1)
 		self.input_frame_num = iterator_param.get('input_frame_num', 5)
 		self.output_frame_num = iterator_param.get('output_frame_num', 15)
 
-		self.imageW = iterator_param.get('input_imageW', 330)	
+		self.imageW = iterator_param.get('input_imageW', 100)	
 		self.imageH = self.imageW
 		self.minibatch_size = iterator_param.get('minibatch_size', 1)
 		self.depth = iterator_param.get('depth', 1)
@@ -61,23 +61,33 @@ class RawIterator(object):
 
 		self.dataSize = 0 # init
 		# init slodIDs
-		self.slotIDs = range(self.minibatch_size)
-		if not os.path.isfile(self.data_txt):
+		generateNewText = iterator_param.get('generateNewText', False)
+		if generateNewText:
 			self.slotDevide()
+			#self.entriesTextGenerator()
+		else:
+			self.calculateSlotSizeFromTxt()
+			
+		self.slotIDs = range(self.minibatch_size)
+		#if not os.path.isfile(self.data_txt):
+		#self.slotDevide()
 
 	def begin(self, do_shuffle=True):
 		print('begin')
-		self.entriesCal(do_shuffle)
+		
 
 		print('loading data_txt')
 		of = open(self.data_txt, 'r')
 		self.imageList = of.readlines()
 		assert(not len(self.imageList) == 0)
 		of.close()
+		self.entriesCal(do_shuffle)
+
 		return
 
 	def total(self):
 		return self.total_image
+
 
 	def entriesCal(self, do_shuffle=False):
 		""" 
@@ -92,13 +102,44 @@ class RawIterator(object):
 		"""
 
 		self.txt_entries = []
+		totalImage = 0
+		countImage = 0
+		self.txt_entries_file = open(self.total_list_file.split(".txt")[0] + "_train_entry.txt", 'w')
 		for numOfSlot in range(self.numOfSlot): # number of slot: 135
 			subslot_size = self.slot_size / 8
 			# print(numOfSlot)
 			if(self.mode == 'train'):
 				subslot_size = subslot_size * 6 # 480
 				for lineNumber in range(numOfSlot* subslot_size, numOfSlot * subslot_size + subslot_size - self.stride):
-					self.txt_entries.append(lineNumber)		
+					self.txt_entries.append(lineNumber)
+					
+					## -----------
+					## self.lineNumber = self.txt_entries[self.slotID] 
+					'''
+					for length in range(self.input_frame_num):
+						totalImage += 1
+						# print('lineNumber: ' + str(self.lineNumber) + ' ' + self.imageList[self.lineNumber])
+						imgname = self.imageList[lineNumber]
+						# year = "20" + self.imageList[lineNumber].split('img')[1][0] + self.imageList[self.lineNumber].split('img')[1][1] + 'new/'
+						name = self.path + self.imageList[lineNumber].split('\n')[0]
+						# print(name)
+						imagePIL = Image.open(name)
+						numpy.asarray(imagePIL, dtype=numpy.float32)
+						if(numpy.mean(imagePIL) > 2):
+							#print(name)
+							self.txt_entries_file.write(name)
+							self.txt_entries_file.write('\n')
+							countImage += 1
+							self.txt_entries.append(lineNumber)
+							#print('.')
+						#else:
+							#print('x')
+							
+						##result[length, i, 0, :, :] = imagePIL
+						##self.lineNumber += self.select_step
+					## -----------
+					'''
+
 			else:
 				subslot_size = subslot_size # 80
 				for lineNumber in range(numOfSlot* subslot_size, numOfSlot * subslot_size + subslot_size - self.stride):
@@ -106,9 +147,19 @@ class RawIterator(object):
 			if(do_shuffle):
 				# print('shuffle data')
 				shuffle(self.txt_entries)
+		self.txt_entries_file.close()
 		print("entries_generate done: ")
 		self.dataSize = len(self.txt_entries)
+		print('total image: ' + str(totalImage*self.input_frame_num) + ' and count image: ' + str(countImage))
 		
+	def calculateSlotSizeFromTxt(self):
+		print()
+		valid_txt = open(self.total_list_file.split(".txt")[0] + "_valid.txt", 'r')
+		valid_total = valid_txt.readlines()
+		valid_txt.close()
+		valid_total = len(valid_total)
+		self.numOfSlot = valid_total/self.slot_size * 8
+		print('update slotSize to be '+ str(self.numOfSlot))
 
 	def slotDevide(self):
 		"""
@@ -125,22 +176,75 @@ class RawIterator(object):
 		train_txt = open(self.total_list_file.split(".txt")[0] + "_train.txt", 'w')
 		valid_txt = open(self.total_list_file.split(".txt")[0] + "_valid.txt", 'w')
 		test_txt = open(self.total_list_file.split(".txt")[0] + "_test.txt", 'w')
-
-		for i in range(int(math.floor(self.total_image / self.slot_size))):
-			print(i)
+		c = 0
+		
+		mean_txt = open(self.total_list_file.split(".txt")[0] + "_slot640_mean.txt", 'w')
+		
+		mean_list = []
+		
+		for i in range(self.numOfSlot):
+			#print(i)
+			totalMean = 0
 			start = self.slot_size * i
 			subslot_size = self.slot_size / 8
-			for line in lines[start : start + 6 * subslot_size]:
-				train_txt.write(line)
-	 		
-			for line in lines[start + 6 * subslot_size : start + 7 * subslot_size]:
-				test_txt.write(line) 
+			for line in lines[start: start + 8*subslot_size]:
+				name = self.path + line.split('\n')[0]
+				imagePIL = Image.open(name)
+				numpy.asarray(imagePIL, dtype=numpy.float32)
+				totalMean += numpy.mean(imagePIL)
+			print('slot ' + str(i) + ' mean: ' + str(totalMean))
+			mean_txt.write(lines[start].split('\n')[0] + '-mean-' + str(totalMean) + '\n')
+			mean_list.append(totalMean)
+		# ------
+   		list.sort(mean_list)
+   		print('mean_list num100: ' + str(mean_list[250]))
+   		threMean = mean_list[self.numOfSlot - 100]
+   		mean_txt.close()
+   		
+   		#threMean = 12496.7436
+   		print('# 100' + str(threMean))
+   		print('# ')
+   		# -------- get threhold
+   		
+   		mean_txt = open(self.total_list_file.split(".txt")[0] + "_slot640_mean.txt", 'r')
+   		all_means = mean_txt.readlines()
+   		mean_txt.close()
+ 		for i in range(self.numOfSlot):
+			#print(i)
 			
-			for line in lines[start + 7 * subslot_size : start + 8 * subslot_size]:
-				valid_txt.write(line)
+			#print(all_means)
+			curmean = float(all_means[i].split('-')[2].split('\n')[0])
+			name = all_means[i].split('-')[0]
+			if curmean > threMean:
+				#print('curmean ' + str(curmean) + ' ' + name)
+				#continue
+			#else:
+				print('get ' + str(curmean))
+			start = self.slot_size * i
+			subslot_size = self.slot_size / 8
+			# calculate total mean again
+			
+				  		
+			if(curmean > threMean):
+				c += 1
+				print(name)
+
+				for line in lines[start : start + 6 * subslot_size]:
+					train_txt.write(line)
+		 		
+				for line in lines[start + 6 * subslot_size : start + 7 * subslot_size]:
+					test_txt.write(line) 
+				
+				for line in lines[start + 7 * subslot_size : start + 8 * subslot_size]:
+					valid_txt.write(line)
+
+		print('self.numOfSlot: ' + str(self.numOfSlot) + ' to valid count ' + str(c))
+		self.numOfSlot = c
    		train_txt.close()
    		valid_txt.close()
    		test_txt.close()
+
+
 
 
 	def dataReadNextInput(self):
@@ -153,8 +257,11 @@ class RawIterator(object):
 				# start point:
 				self.lineNumber = self.txt_entries[self.slotID] 
 				for length in range(self.input_frame_num):
-					print('lineNumber: ' + str(self.lineNumber) + ' ' + self.imageList[self.lineNumber])
+					# print('lineNumber: ' + str(self.lineNumber) + ' ' + self.imageList[self.lineNumber])
+					imgname = self.imageList[self.lineNumber]
+					# year = "20" + self.imageList[self.lineNumber].split('img')[1][0] + self.imageList[self.lineNumber].split('img')[1][1] + 'new/'
 					name = self.path + self.imageList[self.lineNumber].split('\n')[0]
+					# print(name)
 					imagePIL = Image.open(name)
 					numpy.asarray(imagePIL, dtype=numpy.float32)
 					result[length, i, 0, :, :] = imagePIL
@@ -172,9 +279,9 @@ class RawIterator(object):
 			yield result
 
 	def dataReadNextOutput(self):
-		print('out')
+		#print('out')
 		result = numpy.zeros((self.output_frame_num, self.minibatch_size, self.depth, self.imageH, self.imageW), dtype=numpy.float32)
-		print(self.txt_entries[1:10])
+		#print(self.txt_entries[1:10])
 		while True:
 			# load batchSize
 			for i in range(self.minibatch_size):
@@ -183,8 +290,11 @@ class RawIterator(object):
 				self.lineNumber = self.txt_entries[self.slotID] + self.select_step * self.input_frame_num
 				# print('self.slotID: ' + str(self.slotID), len(self.txt_entries))
 				for length in range(self.output_frame_num):
-					print('lineNumber: ' + str(self.lineNumber) + ' ' + self.imageList[self.lineNumber])
+					# print('lineNumber: ' + str(self.lineNumber) + ' ' + self.imageList[self.lineNumber])
+					imgname = self.imageList[self.lineNumber]
+					# year = "20" + self.imageList[self.lineNumber].split('img')[1][0] + self.imageList[self.lineNumber].split('img')[1][1] + 'new/'
 					name = self.path + self.imageList[self.lineNumber].split('\n')[0]
+					# print(name)
 					imagePIL = Image.open(name)
 					numpy.asarray(imagePIL, dtype=numpy.float32)
 					# imagePIL.show()
@@ -192,16 +302,6 @@ class RawIterator(object):
 					# result[i] = img
 					result[length, i, 0, :, :] = imagePIL
 					self.lineNumber += self.select_step
-
-				"""
-				imagePIL = Image.open(name)
-				imagePIL.thumbnail(size)
-				
-				# imagePIL.show()
-				img = numpy.asarray(imagePIL)
-				print(img.shape)
-				result[i] = img
-				"""
 			yield result
 	def next(self):
 		"""
