@@ -1,0 +1,21 @@
+{
+    "is_draw_skill": 0,
+    "need_update": 1, 
+    "address_book":[
+        {"server":"zengxiaohui@10.10.10.139", "root":"/data1/zengxiaohui/hko/experiment"},
+        { "server":"xzengaf@cluster2.cse.ust.hk", "root": "/csproject/dygroup2/xiaohui/experiment"}
+        ],
+    "savepath": "default",
+    "exp_name": "test_penloss",
+    "setID": "all_test", 
+    "experiments":[
+        {"title": "139_04_top200_nopen_baseline", "address_id":0},
+        {"title": "139_05_ori100_pen_as04", "address_id":0},
+        {"title": "139_06_ori100_pen_as04_b30_test_ori", "address_id":0},
+        {"title": "139_07_test_top200_pen8", "address_id":0},
+        {"title": "139_08_test_top400_pen_as04", "address_id":0},
+        {"title": "139_09_top200_nopen_baseline_lr08", "address_id":0},
+        {"title": "139_11_ori100_nopen_baseline", "address_id":0},
+        {"title": "139_10_top200_pen5_w5", "address_id":0 }
+    ]
+}
