@@ -8,6 +8,34 @@ import os.path
 
 ## update itself
 ## parse log itself
+"""
+    Attributes:
+        title:
+        server_path:
+        average_interval:
+        need_update:
+        skill_score:
+        path:
+        load_score_from_log:
+        need_sorted:
+
+        iter_list: []
+        epoch_list: []
+        train_loss_list = []
+        valid_loss_list = []
+        train_log = ""
+        score_dict_test = {
+                            'csi': {
+                                "test_name": test_name,    
+                                "score": buf,
+                                "exp_name": exp_name 
+                                },
+                                {...},
+                            'FAR': {..}, {..}
+                          }
+        score_dict_valid = 
+
+"""
 class ExpContainer(object):
     def __init__(self, exp_config):
         self.title = exp_config['title']
@@ -25,6 +53,7 @@ class ExpContainer(object):
         self.score_dict_test = {}
         self.need_sorted = exp_config.get('need_sorted', 0)
         self.score_dict_valid = {}
+        self.final_test_epoch = 0
         if self.need_update:
             self.UpdateData()
 
@@ -49,7 +78,7 @@ class ExpContainer(object):
         fileList, found = Iglob(path, "*log*")
         print '[ReadFileList] find log in %s get list %d '%(path, len(fileList))
         print fileList
-        if len(fileList) == 1:
+        if len(fileList) == 0:
             self.UpdateData()
             fileList, found = Iglob(path, "*log*")
         assert(len(fileList) == 1)
@@ -102,30 +131,34 @@ class ExpContainer(object):
         ## return iter_list, train_loss_list, valid_loss_list
         iter_num = 0
         acc_train_loss = 0
+        last_epoch = -1
+        current_epoch = 0 
         for ind, line in enumerate(lines):
             if "INFO - Validation Cost:" not in line and "Minibatch Cost:" not in line:
                 continue
+            if 'epoch(' in line:    
+                current_epoch = int(line.split('epoch(')[1].split(')')[0])
             if "Validation Cost" in line:
+                self.epoch_list.append(current_epoch)
                 valid_loss_num = float(line.split('Validation Cost: ')[1].split(' Time Spent:')[0])
                 # remove the repeat one
                 if len(self.valid_loss_list) and valid_loss_num == self.valid_loss_list[-1]:
                     continue
                 self.valid_loss_list.append(valid_loss_num) 
-                if 'epoch' in line:
-                    current_epoch = int(line.split('epoch: ')[1].split(',')[0])
-                    self.epoch_list.append(current_epoch)
-                else:
-                    self.epoch_list.append(len(self.epoch_list) + 1)
             elif "Minibatch" in line:
+                if last_epoch != current_epoch:
+                    print 'fist iter skip'
+                    last_epoch = current_epoch
+                    continue
                 iter_num += 1
                 train_loss_num = float(line.split('Minibatch Cost: ')[1].split(' Time Spent:')[0].strip(':'))
-            if math.isnan(train_loss_num) or 9999 < train_loss_num:
-                train_loss_num = 9999
-            acc_train_loss += train_loss_num
-            if 0 == (int(iter_num) % average_interval):
-                self.train_loss_list.append(float(acc_train_loss / average_interval))
-                self.iter_list.append(int(iter_num))
-                acc_train_loss = 0
+                if math.isnan(train_loss_num) or 39999 < train_loss_num:
+                    train_loss_num = 39999
+                acc_train_loss += train_loss_num
+                if 0 == (int(iter_num) % average_interval):
+                    self.train_loss_list.append(float(acc_train_loss / average_interval))
+                    self.iter_list.append(int(iter_num))
+                    acc_train_loss = 0
         print '[ReadTrainLog] return iter %d, epoch %d'%(len(self.iter_list), len(self.epoch_list))
         assert(len(self.iter_list) == len(self.train_loss_list))
         assert(len(self.epoch_list) == len(self.valid_loss_list))
@@ -154,7 +187,6 @@ class ExpContainer(object):
                     score_name = line.split('score: ')[1]
                     value = score_name.split(':')[1].split('end')[0]
                     score_name = score_name.split(':')[0]
-                    test_name = 'skill_score_%s_epoch%d'%(score_name, current_epoch)
                     # get scorevalue    
                     buf = value
                     i = id + 1
@@ -171,21 +203,24 @@ class ExpContainer(object):
                     buf = [float(x) for x in buf if x not in ['']] 
                     
                     if 'test_data' in line:
-                        test_name = 'test_' + test_name
                         score_dict_test[score_name].append(
                             {
-                                "test_name": test_name,    
-                                "score": buf,
-                                "exp_name": exp_name 
+                                'test_name': 
+                                    'test_skill_score_%s_epoch%d'%(score_name, current_epoch),
+                                'score': buf,
+                                'epoch': current_epoch,
+                                'exp_name': exp_name 
                             })
                     elif 'valid_data' in line:
-                        test_name = 'valid_' + test_name
                         score_dict_valid[score_name].append(
                             {
-                                "test_name": test_name,    
-                                "score": buf,
-                                "exp_name": exp_name 
+                                'test_name':
+                                    'valid_skill_score_%s_epoch%d'%(score_name, current_epoch),
+                                'score': buf,
+                                'epoch': current_epoch,
+                                'exp_name': exp_name 
                             })   
+                    self.final_test_epoch = len(score_dict_test[score_name])
         self.score_dict_test = score_dict_test
         self.score_dict_valid = score_dict_valid
 
@@ -229,14 +264,14 @@ class ExpContainer(object):
             #if is_all:
             #    label_name = exp_name_cur + '_' + test_name 
             #else:
-            label_name = test_name
             if len(score_ele) == 1:
-                plt.plot(1, score_ele[0], 'o', label=label_name)
+                plt.plot(1, score_ele[0], 'o', label=test_name)
                 continue
-
-            plt.plot(range(len(score)), score[:], label=label_name)
-            print 'ploting ', exp_name_cur, test_name , '\t ', score_name, score[-1]
-            plt.text(len(score), score[-1] , str("%.4f(%s)" % (score[-1], test_name.split('_')[0]))) 
+    
+            plt.plot(range(len(score)), score[:], label=test_name+'@%d'%(sum(score) / 15))
+            
+            print 'ploting ', exp_name_cur, test_name , '\t ', score_name, sum(score)/15.0
+            plt.text(len(score), score[-1] , str("%.4f(%s)" %(score[-1], test_name.split('_')[0]))) 
 
         lgd = plt.legend(bbox_to_anchor=(0.5, 1.35),  loc='upper center', borderaxespad=0., fontsize='x-small', mode='expand', ncol=2)
 
@@ -279,17 +314,48 @@ class ExpContainer(object):
         min_score = 1e5
         max_id = 0
         min_id = 0
-        score_list = self.score_dict_test[score_name]
-        for id, test in enumerate(score_list):
+        score_test_list = self.score_dict_test[score_name]
+        for test in score_test_list:
             if test['score'][-1] > max_score:
                 max_score = test['score'][-1]
-                max_id = id
-
+                max_id = test['epoch']
+                max_score_list = test['score']
             if test['score'][-1] < min_score:
                 min_score = test['score'][-1]
-                min_id = id
+                min_id = test['epoch']
+                min_score_list = test['score']
+
         print 'for ', self.title, ' score ', score_name, max_score, min_score
         if mode == 'h':
-            return max_id, max_score
+            return max_id, max_score, max_score_list
         else:
-            return min_id, min_score
+            return min_id, min_score, min_score_list
+    def OverAllEval_(self, score_name, score_weight, eval_score_list, mode):
+        if mode == 'test':
+            testdict_list = self.score_dict_test[score_name]
+        elif mode == 'valid':
+            testdict_list = self.score_dict_valid[score_name]
+        else:
+            return
+        for id, testdict in enumerate(testdict_list):
+            eval_score_list[id] += sum(testdict['score']) / 15.0 * score_weight
+
+    def OverAllEval(self, score_weight_dict, mode='test', score_name=''):
+
+        eval_score_list = [0 for i in range(self.final_test_epoch)]
+        
+        if score_name == 'Rain RMSE':
+            self.OverAllEval_(score_name, score_weight_dict, eval_score_list, mode)
+        else:
+            for score_name_ in self.skill_score:
+                if score_name_ not in score_weight_dict:
+                    continue
+                self.OverAllEval_(score_name_, score_weight_dict[score_name_], eval_score_list, mode)
+        
+        max_value = max(eval_score_list)
+        max_index = eval_score_list.index(max_value)
+        best_epoch = self.score_dict_test['POD'][max_index]['epoch'] # ugly way to get epoch!
+        print '<OverAllEval> %s max %.5f @%d/%d @%s'%(score_name, max_value, best_epoch, self.final_test_epoch, self.title) 
+        return best_epoch, max_value
+
+
